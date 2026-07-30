@@ -379,13 +379,31 @@ class ChatGPTClient:
             body['conversation_id'] = self.conversation_id
 
         async with httpx.AsyncClient(timeout=60.0) as client:
-            async with aconnect_sse(
-                client, 'POST', f"{self.base_url}/backend-anon/conversation",
-                headers=headers, json=body
-            ) as event_source:
+            response = await client.send(
+                client.build_request(
+                    'POST',
+                    f"{self.base_url}/backend-anon/conversation",
+                    headers=headers,
+                    json=body,
+                ),
+                stream=True,
+            )
+
+            content_type = response.headers.get('content-type', '')
+
+            if 'text/event-stream' not in content_type:
+                # Got a JSON error back instead of SSE
+                body_text = await response.aread()
+                await response.aclose()
+                error_msg = body_text.decode('utf-8', errors='replace')
+                raise Exception(f"ChatGPT returned {response.status_code}: {error_msg[:500]}")
+
+            try:
                 last_len = 0
-                async for event in event_source.aiter_sse():
-                    data_str = event.data
+                async for line in response.aiter_lines():
+                    if not line.startswith('data: '):
+                        continue
+                    data_str = line[6:]
                     if data_str == '[DONE]':
                         break
 
@@ -410,7 +428,8 @@ class ChatGPTClient:
                                     last_len = len(text)
                             if 'id' in message_data:
                                 self.parent_message_id = message_data['id']
-
+            finally:
+                await response.aclose()
     def reset(self):
         self.conversation_id = None
         self.parent_message_id = str(uuid.uuid4())

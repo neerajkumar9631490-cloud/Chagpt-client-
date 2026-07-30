@@ -7,12 +7,12 @@ import base64
 import re
 from typing import AsyncGenerator, Dict, Optional
 import httpx
+from httpx_sse import aconnect_sse
 
 # Global cache for speed
 _CACHED_CONFIG = None
 _CACHED_UA = None
 _CACHED_DEVICE_ID = None
-
 
 class ChatGPTClient:
     def __init__(self):
@@ -275,7 +275,6 @@ class ChatGPTClient:
                 if len(args) >= 2:
                     val = variables.get(args[1], args[1])
                     variables[args[0]] = json.dumps(val)
-
         return result
 
     async def init(self):
@@ -380,53 +379,37 @@ class ChatGPTClient:
             body['conversation_id'] = self.conversation_id
 
         async with httpx.AsyncClient(timeout=60.0) as client:
-            # Build request and send with streaming
-            req = client.build_request(
-                'POST',
-                f"{self.base_url}/backend-anon/conversation",
-                headers=headers,
-                json=body
-            )
-            response = await client.send(req, stream=True)
-
-            # Check Content-Type – if JSON, it's an error
-            content_type = response.headers.get('content-type', '')
-            if 'text/event-stream' not in content_type:
-                error_body = await response.aread()
-                try:
-                    error_json = json.loads(error_body)
-                    detail = error_json.get('detail', error_body.decode())
-                except:
-                    detail = error_body.decode()
-                raise Exception(f"Chat API returned error (status {response.status_code}): {detail}")
-
-            # Now process SSE events
-            last_len = 0
-            async for line in response.aiter_lines():
-                if line.startswith('data: '):
-                    data = line[6:].strip()
-                    if data == '[DONE]':
+            async with aconnect_sse(
+                client, 'POST', f"{self.base_url}/backend-anon/conversation",
+                headers=headers, json=body
+            ) as event_source:
+                last_len = 0
+                async for event in event_source.aiter_sse():
+                    data_str = event.data
+                    if data_str == '[DONE]':
                         break
-                    try:
-                        event = json.loads(data)
-                        if 'conversation_id' in event:
-                            self.conversation_id = event['conversation_id']
 
-                        message_data = event.get('message')
-                        if message_data:
-                            author = message_data.get('author')
-                            if author and author.get('role') == 'assistant':
-                                content = message_data.get('content', {})
-                                parts = content.get('parts', [])
-                                if parts and content.get('content_type') == 'text':
-                                    text = parts[0]
-                                    if len(text) > last_len:
-                                        yield text[last_len:]
-                                        last_len = len(text)
-                                if 'id' in message_data:
-                                    self.parent_message_id = message_data['id']
-                    except json.JSONDecodeError:
+                    try:
+                        data = json.loads(data_str)
+                    except:
                         continue
+
+                    if 'conversation_id' in data:
+                        self.conversation_id = data['conversation_id']
+
+                    message_data = data.get('message')
+                    if message_data:
+                        author = message_data.get('author')
+                        if author and author.get('role') == 'assistant':
+                            content = message_data.get('content', {})
+                            parts = content.get('parts', [])
+                            if parts and content.get('content_type') == 'text':
+                                text = parts[0]
+                                if len(text) > last_len:
+                                    yield text[last_len:]
+                                    last_len = len(text)
+                            if 'id' in message_data:
+                                self.parent_message_id = message_data['id']
 
     def reset(self):
         self.conversation_id = None

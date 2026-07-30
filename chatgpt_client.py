@@ -14,7 +14,9 @@ _CACHED_CONFIG = None
 _CACHED_UA = None
 _CACHED_DEVICE_ID = None
 
-class ChatGPTClient:                                                                                                                                       def __init__(self):
+
+class ChatGPTClient:
+    def __init__(self):
         global _CACHED_CONFIG, _CACHED_UA, _CACHED_DEVICE_ID
 
         self.base_url = "https://chatgpt.com"
@@ -38,7 +40,8 @@ class ChatGPTClient:                                                            
             _CACHED_CONFIG = self._generate_config()
         self.config = _CACHED_CONFIG.copy()
 
-    def _pick(self, arr):                                                                                                                                      return arr[random.randint(0, len(arr) - 1)]
+    def _pick(self, arr):
+        return arr[random.randint(0, len(arr) - 1)]
 
     def _pick_user_agent(self):
         user_agents = [
@@ -49,10 +52,12 @@ class ChatGPTClient:                                                            
         ]
         return self._pick(user_agents)
 
-    def _generate_config(self):                                                                                                                                screen_sizes = [
+    def _generate_config(self):
+        screen_sizes = [
             [1920, 1080], [2560, 1440], [1366, 768],
             [1536, 864], [1440, 900], [3840, 2160]
-        ]                                                                                                                                                      cpu_cores = [8, 12, 16, 24, 32]
+        ]
+        cpu_cores = [8, 12, 16, 24, 32]
         timezones = [
             'Eastern Standard Time', 'Central Standard Time',
             'Mountain Standard Time', 'Pacific Standard Time'
@@ -271,6 +276,7 @@ class ChatGPTClient:                                                            
                 if len(args) >= 2:
                     val = variables.get(args[1], args[1])
                     variables[args[0]] = json.dumps(val)
+
         return result
 
     async def init(self):

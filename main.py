@@ -94,13 +94,16 @@ async def chat(req: ChatRequest, request: Request):
                 },
             )
         else:
-            full_text = ""
-            async for chunk in client.chat(req.message):
-                full_text += chunk
-            return ChatResponse(
-                response=full_text,
-                conversation_id=client.conversation_id,
-            )
+            try:
+                full_text = ""
+                async for chunk in client.chat(req.message):
+                    full_text += chunk
+                return ChatResponse(
+                    response=full_text,
+                    conversation_id=client.conversation_id,
+                )
+            except Exception as e:
+                raise HTTPException(status_code=502, detail=str(e))
 
 
 async def _stream_response(message: str):
